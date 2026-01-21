@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft - Physics Fixed</title>
+    <title>Web Minecraft - Final Physics Fix</title>
     <style>
         body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        /* スティック */
         #joystick-container { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; pointer-events: auto; border: 2px solid rgba(255, 255, 255, 0.5); }
         #joystick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; pointer-events: none; }
+        /* ボタン */
         #action-grid { position: absolute; bottom: 40px; right: 40px; display: grid; grid-template-areas: "up up" "left right" "down down"; gap: 15px; pointer-events: auto; }
         .act-btn { width: 75px; height: 75px; border-radius: 50%; background: rgba(0, 0, 0, 0.4); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #fff; pointer-events: auto; }
         .act-btn:active { background: rgba(255, 255, 255, 0.6); transform: scale(0.9); }
@@ -63,16 +65,17 @@
         ];
 
         function addBlock(x, y, z, mIdx) {
-            const key = `${x},${y},${z}`;
+            const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
             if (worldData.has(key)) return;
             const mesh = new THREE.Mesh(geometry, materials[mIdx % 3]);
-            mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+            mesh.position.set(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.floor(z) + 0.5);
             scene.add(mesh);
             worldData.set(key, mesh);
         }
 
-        for (let x = -20; x < 20; x++) {
-            for (let z = -20; z < 20; z++) {
+        // 地面生成
+        for (let x = -15; x < 15; x++) {
+            for (let z = -15; z < 15; z++) {
                 addBlock(x, -1, z, (Math.abs(x+z)%2));
             }
         }
@@ -83,28 +86,28 @@
             vel: new THREE.Vector3(), 
             onGround: false, 
             fly: false, 
-            speed: 5.5,
+            speed: 5.0,
             gravity: 24.0
         };
         let moveState = { x: 0, y: 0 };
         let matIdx = 0;
 
-        // 判定用：指定座標にブロックがあるか
+        // 指定座標にブロックがあるか
         function isBlockAt(x, y, z) {
             return worldData.has(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
         }
 
-        // 全方向当たり判定
+        // AABB(衝突判定ボックス)チェック
         function checkCollision(pos) {
             const r = player.radius;
-            // 足元(少し上からチェック)、腰、頭の3層で判定
-            const levels = [pos.y - player.eyeHeight + 0.2, pos.y - 0.5, pos.y + 0.2];
-            for (let ly of levels) {
-                if (isBlockAt(pos.x - r, ly, pos.z - r)) return true;
-                if (isBlockAt(pos.x + r, ly, pos.z - r)) return true;
-                if (isBlockAt(pos.x - r, ly, pos.z + r)) return true;
-                if (isBlockAt(pos.x + r, ly, pos.z + r)) return true;
-                if (isBlockAt(pos.x, ly, pos.z)) return true;
+            const h = player.eyeHeight;
+            // プレイヤーの体の範囲にあるブロック座標をすべてチェック
+            for(let ix = Math.floor(pos.x - r); ix <= Math.floor(pos.x + r); ix++) {
+                for(let iy = Math.floor(pos.y - h + 0.05); iy <= Math.floor(pos.y + 0.3); iy++) {
+                    for(let iz = Math.floor(pos.z - r); iz <= Math.floor(pos.z + r); iz++) {
+                        if (worldData.has(`${ix},${iy},${iz}`)) return true;
+                    }
+                }
             }
             return false;
         }
@@ -128,22 +131,22 @@
         window.addEventListener('touchmove', (e) => { if(jActive) { e.preventDefault(); handleJoystick(e); } }, { passive: false });
         window.addEventListener('touchend', () => { jActive = false; jKnob.style.transform = `translate(0,0)`; moveState = { x: 0, y: 0 }; });
 
-        // アクション
+        // アクションボタン
         const ray = new THREE.Raycaster();
         function performAction(isBuild) {
             ray.setFromCamera(new THREE.Vector2(), camera); ray.far = 6;
             const hits = ray.intersectObjects(Array.from(worldData.values()));
             if (hits.length > 0) {
                 const h = hits[0], p = h.point, n = h.face.normal;
-                const bx = Math.floor(p.x - n.x*0.1), by = Math.floor(p.y - n.y*0.1), bz = Math.floor(p.z - n.z*0.1);
+                const bx = Math.floor(p.x - n.x*0.01), by = Math.floor(p.y - n.y*0.01), bz = Math.floor(p.z - n.z*0.01);
                 if (isBuild) addBlock(bx + Math.round(n.x), by + Math.round(n.y), bz + Math.round(n.z), matIdx);
-                else { const key = `${bx},${by},${bz}`; scene.remove(worldData.get(key)); worldData.delete(key); }
+                else { const key = `${bx},${by},${bz}`; const mesh = worldData.get(key); if(mesh){scene.remove(mesh); worldData.delete(key);} }
             }
         }
         document.getElementById('btn-build').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(true); });
         document.getElementById('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(false); });
         document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
-            e.preventDefault(); if (player.fly) player.vel.y = 8; else if (player.onGround) { player.vel.y = 9; player.onGround = false; }
+            e.preventDefault(); if (player.fly) player.vel.y = 8; else if (player.onGround) { player.vel.y = 8.5; player.onGround = false; }
         });
         document.getElementById('btn-fly-down').addEventListener('touchstart', (e) => { e.preventDefault(); if(player.fly) player.vel.y = -8; });
 
@@ -158,6 +161,7 @@
             this.innerText = ["草ブロック", "土ブロック", "石ブロック"][matIdx];
         };
 
+        // 視点移動
         let yaw = 0, pitch = 0, lastX, lastY;
         window.addEventListener('touchstart', (e) => {
             if (e.target.closest('#joystick-container') || e.target.closest('.act-btn') || e.target.closest('.toggle-btn')) return;
@@ -176,6 +180,7 @@
         function loop() {
             requestAnimationFrame(loop);
             const dt = Math.min(clock.getDelta(), 0.1);
+            
             const fw = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); fw.y = 0; fw.normalize();
             const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
             
@@ -185,38 +190,37 @@
                 camera.position.y += player.vel.y * dt;
                 player.vel.y *= 0.85;
             } else {
-                // 水平移動
-                let nextX = camera.position.x + (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
-                let nextZ = camera.position.z + (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
-                
-                if (!checkCollision({x: nextX, y: camera.position.y, z: camera.position.z})) camera.position.x = nextX;
-                if (!checkCollision({x: camera.position.x, y: camera.position.y, z: nextZ})) camera.position.z = nextZ;
-
-                // 垂直移動（重力）
+                // 1. 重力の適用
                 player.vel.y -= player.gravity * dt;
-                let nextY = camera.position.y + player.vel.y * dt;
+                
+                // 2. 軸別に移動を試行（これがバウンド対策のキモ）
+                const moveX = (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
+                const moveZ = (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
+                const moveY = player.vel.y * dt;
 
-                // 接地・衝突判定のコア
-                if (player.vel.y < 0) { // 落下中
-                    // 足元よりわずかに下をチェック
-                    const footY = nextY - player.eyeHeight;
-                    if (isBlockAt(camera.position.x, footY, camera.position.z)) {
+                // X軸移動
+                camera.position.x += moveX;
+                if(checkCollision(camera.position)) camera.position.x -= moveX;
+
+                // Z軸移動
+                camera.position.z += moveZ;
+                if(checkCollision(camera.position)) camera.position.z -= moveZ;
+
+                // Y軸移動
+                camera.position.y += moveY;
+                if(checkCollision(camera.position)) {
+                    if(player.vel.y < 0) { // 着地
                         player.onGround = true;
-                        player.vel.y = 0;
-                        // 座標を地面の高さに完全に固定（これがバウンドを防ぐ）
-                        camera.position.y = Math.floor(footY) + 1.0 + player.eyeHeight;
-                    } else {
-                        camera.position.y = nextY;
-                        player.onGround = false;
+                        // 座標の端数を切り捨てて、地面の「真上」に強制テレポート
+                        camera.position.y = Math.floor(camera.position.y - player.eyeHeight + 0.5) + player.eyeHeight;
                     }
-                } else if (player.vel.y > 0) { // 上昇中（ジャンプ）
-                    if (isBlockAt(camera.position.x, nextY + 0.3, camera.position.z)) {
-                        player.vel.y = 0; // 頭をぶつけた
-                    } else {
-                        camera.position.y = nextY;
-                        player.onGround = false;
-                    }
+                    player.vel.y = 0;
+                } else {
+                    player.onGround = false;
                 }
+                
+                // 画面外（落下）対策
+                if(camera.position.y < -30) camera.position.set(0, 10, 0);
             }
             renderer.render(scene, camera);
         }
