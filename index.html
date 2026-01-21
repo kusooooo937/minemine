@@ -3,22 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft - No Bounce Final</title>
+    <title>Web Minecraft - iPad Optimized UI</title>
     <style>
         body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        #joystick-container { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; pointer-events: auto; border: 2px solid rgba(255, 255, 255, 0.5); }
+        
+        /* ▼▼▼ UI位置調整箇所 ▼▼▼ */
+        /* bottomの値を大きくして、より上側に配置しました */
+        
+        /* ジョイスティック (左下) */
+        #joystick-container {
+            position: absolute;
+            bottom: 100px; /* 40px -> 100px に変更 */
+            left: 60px;    /* 40px -> 60px に少し内側へ */
+            width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%; pointer-events: auto;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+        
+        /* アクションボタン (右下) */
+        #action-grid {
+            position: absolute;
+            bottom: 100px; /* 40px -> 100px に変更 */
+            right: 60px;   /* 40px -> 60px に少し内側へ */
+            display: grid; grid-template-areas: "up up" "left right" "down down"; gap: 15px; pointer-events: auto;
+        }
+        /* ▲▲▲ UI位置調整箇所ここまで ▲▲▲ */
+
         #joystick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; pointer-events: none; }
-        #action-grid { position: absolute; bottom: 40px; right: 40px; display: grid; grid-template-areas: "up up" "left right" "down down"; gap: 15px; pointer-events: auto; }
         .act-btn { width: 75px; height: 75px; border-radius: 50%; background: rgba(0, 0, 0, 0.4); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #fff; pointer-events: auto; }
         .act-btn:active { background: rgba(255, 255, 255, 0.6); transform: scale(0.9); }
         #btn-build { background: rgba(0, 150, 0, 0.6); grid-area: left; }
         #btn-break { background: rgba(150, 0, 0, 0.6); grid-area: right; }
         #btn-jump { background: rgba(200, 150, 0, 0.6); grid-area: up; }
         #btn-fly-down { background: rgba(50, 50, 50, 0.6); grid-area: down; }
-        #top-bar { position: absolute; top: 10px; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: auto; }
-        .toggle-btn { padding: 10px 15px; background: rgba(0,0,0,0.6); color: white; border-radius: 20px; border: none; }
+        #top-bar { position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: auto; }
+        .toggle-btn { padding: 10px 15px; background: rgba(0,0,0,0.6); color: white; border-radius: 20px; border: none; font-size: 16px; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
     </style>
 </head>
@@ -104,7 +126,7 @@
             return false;
         }
 
-        // ジョイスティック (省略せずそのまま維持)
+        // ジョイスティック
         const jContainer = document.getElementById('joystick-container');
         const jKnob = document.getElementById('joystick-knob');
         let jActive = false;
@@ -175,7 +197,6 @@
                 camera.position.addScaledVector(rt, moveState.x * 10 * dt);
                 camera.position.y += player.vel.y * dt; player.vel.y *= 0.8;
             } else {
-                // 1. 水平移動の先行処理
                 const moveX = (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
                 const moveZ = (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
                 
@@ -186,35 +207,26 @@
                     camera.position.z += moveZ;
                 }
 
-                // 2. 垂直移動 (バウンド防止の核心)
-                // 接地判定用の足元の高さを取得
                 const footY = camera.position.y - player.eyeHeight;
-                // 「今まさにブロックの真上にいるか」を判定
                 const isOverBlock = worldData.has(`${Math.floor(camera.position.x)},${Math.floor(footY - 0.01)},${Math.floor(camera.position.z)}`);
 
                 if (isOverBlock && player.vel.y <= 0) {
-                    // 【接地状態】
                     player.onGround = true;
                     player.vel.y = 0;
-                    // 地面の高さに強制スナップ（0.001の微小な浮きを持たせて判定のチャタリングを防ぐ）
                     const targetY = Math.floor(footY - 0.01) + 1.0 + player.eyeHeight + 0.001;
-                    // 誤差が一定以上あるときだけ補正
                     if (Math.abs(camera.position.y - targetY) > 0.001) {
                         camera.position.y = targetY;
                     }
                 } else {
-                    // 【空中状態】
                     player.onGround = false;
                     player.vel.y -= player.gravity * dt;
                     const nextY = camera.position.y + player.vel.y * dt;
 
-                    // 下方向の衝突チェック
                     if (player.vel.y < 0 && isColliding(camera.position.x, nextY, camera.position.z)) {
                         player.onGround = true;
                         player.vel.y = 0;
                         camera.position.y = Math.floor(nextY - player.eyeHeight) + 1.0 + player.eyeHeight + 0.001;
                     } else if (player.vel.y > 0 && isColliding(camera.position.x, nextY + 0.2, camera.position.z)) {
-                        // 上方向の衝突（頭打ち）
                         player.vel.y = 0;
                     } else {
                         camera.position.y = nextY;
