@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Simple Web Minecraft Mobile</title>
+    <style>
+        body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; }
+        canvas { display: block; }
+        
+        /* UIレイヤー */
+        #ui-layer {
+            position: absolute; bottom: 20px; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* UI以外の場所はキャンバスにタッチを通す */
+            display: flex; flex-direction: column; justify-content: flex-end;
+        }
+
+        /* 操作ボタン共通スタイル */
+        .btn {
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid #fff; border-radius: 10px;
+            pointer-events: auto; /* ボタンはタッチを受け付ける */
+            touch-action: none;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; color: #333; select-user: none;
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.8); }
+
+        /* 移動キーパッド */
+        #d-pad {
+            position: absolute; bottom: 30px; left: 30px;
+            width: 150px; height: 150px;
+        }
+        #btn-fwd { position: absolute; top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-back { position: absolute; bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-left { position: absolute; top: 50px; left: 0; width: 50px; height: 50px; }
+        #btn-right { position: absolute; top: 50px; right: 0; width: 50px; height: 50px; }
+
+        /* アクションボタン（右側） */
+        #actions {
+            position: absolute; bottom: 30px; right: 30px;
+            display: flex; gap: 15px;
+        }
+        .action-btn { width: 60px; height: 60px; border-radius: 50%; font-size: 12px; }
+        
+        /* モード切替スイッチ */
+        #mode-switch {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            padding: 10px 20px; pointer-events: auto;
+            background: rgba(0,0,0,0.5); color: white;
+            border-radius: 20px; font-size: 14px;
+        }
+
+        /* 中央のクロスヘア（照準） */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 10px; height: 10px;
+            background: transparent;
+            border: 2px solid white; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+    
+    <div id="ui-layer">
+        <div id="mode-switch" onclick="toggleMode()">モード: 置く (緑)</div>
+
+        <div id="d-pad">
+            <div class="btn" id="btn-fwd">▲</div>
+            <div class="btn" id="btn-left">◀</div>
+            <div class="btn" id="btn-right">▶</div>
+            <div class="btn" id="btn-back">▼</div>
+        </div>
+
+        <div id="actions">
+            <div class="btn action-btn" id="btn-up">上昇</div>
+            <div class="btn action-btn" id="btn-down">下降</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // --- 基本設定 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // 空の色
+        scene.fog = new THREE.Fog(0x87CEEB, 10, 50);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- ライト ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // --- 地面生成 ---
+        const blockSize = 1;
+        const geometry = new THREE.BoxGeometry(blockSize, blockSize, blockSize);
+        // テクスチャの代わりにシンプルな色を使用
+        const materials = [
+            new THREE.MeshLambertMaterial({ color: 0x4CAF50 }), // 草 (緑)
+            new THREE.MeshLambertMaterial({ color: 0x795548 }), // 土 (茶)
+            new THREE.MeshLambertMaterial({ color: 0x808080 })  // 石 (グレー)
+        ];
+
+        const objects = []; // 衝突判定用リスト
+
+        // 地面を生成 (20x20)
+        for (let x = -10; x < 10; x++) {
+            for (let z = -10; z < 10; z++) {
+                const material = (Math.abs(x) + Math.abs(z)) % 2 === 0 ? materials[0] : materials[1]; 
+                const voxel = new THREE.Mesh(geometry, material);
+                voxel.position.set(x, -1, z);
+                scene.add(voxel);
+                objects.push(voxel);
+            }
+        }
+
+        camera.position.set(0, 1, 0);
+
+        // --- 操作ロジック ---
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let moveUp = false;
+        let moveDown = false;
+
+        // ボタンのイベントリスナー設定
+        const setBtn = (id, startAction, endAction) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); startAction(); }, {passive: false});
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); endAction(); });
+            // PCのマウス操作用
+            btn.addEventListener('mousedown', (e) => { startAction(); });
+            btn.addEventListener('mouseup', (e) => { endAction(); });
+        };
+
+        setBtn('btn-fwd', () => moveForward = true, () => moveForward = false);
+        setBtn('btn-back', () => moveBackward = true, () => moveBackward = false);
+        setBtn('btn-left', () => moveLeft = true, () => moveLeft = false);
+        setBtn('btn-right', () => moveRight = true, () => moveRight = false);
+        setBtn('btn-up', () => moveUp = true, () => moveUp = false);
+        setBtn('btn-down', () => moveDown = true, () => moveDown = false);
+
+        // --- 視点移動 (タッチスワイプ) ---
+        let isDragging = false;
+        let previousTouchX = 0;
+        let previousTouchY = 0;
+        let yaw = 0;
+        let pitch = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            // UI上のタッチは無視
+            if (e.target.closest('.btn') || e.target.id === 'mode-switch') return;
+            
+            isDragging = true;
+            previousTouchX = e.touches[0].clientX;
+            previousTouchY = e.touches[0].clientY;
+        }, {passive: false});
+
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - previousTouchX;
+            const deltaY = touch.clientY - previousTouchY;
+
+            yaw -= deltaX * 0.005;
+            pitch -= deltaY * 0.005;
+            
+            // 上下の首振り制限
+            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+
+            camera.rotation.order = "YXZ";
+            camera.rotation.y = yaw;
+            camera.rotation.x = pitch;
+
+            previousTouchX = touch.clientX;
+            previousTouchY = touch.clientY;
+        }, {passive: false});
+
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        // --- ブロックの設置・破壊 (レイキャスター) ---
+        const raycaster = new THREE.Raycaster();
+        const center = new THREE.Vector2(0, 0); // 画面中央
+        let isBuildMode = true;
+        let currentColorIndex = 0;
+
+        function toggleMode() {
+            isBuildMode = !isBuildMode;
+            const btn = document.getElementById('mode-switch');
+            if(isBuildMode) {
+                // 色を切り替え
+                currentColorIndex = (currentColorIndex + 1) % materials.length;
+                let colorName = ["緑", "茶", "灰"][currentColorIndex];
+                btn.innerText = `モード: 置く (${colorName})`;
+                btn.style.background = "rgba(0,100,0,0.5)";
+            } else {
+                btn.innerText = "モード: 壊す";
+                btn.style.background = "rgba(100,0,0,0.5)";
+            }
+        }
+
+        // 画面中央タップ判定（少し複雑なため、ダブルタップや簡易タップで実装）
+        // ここでは「画面の何もないところをタップ」でアクションを実行
+        document.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.btn') || e.target.id === 'mode-switch') return;
+            
+            // タッチ開始時は視点移動が優先だが、指が動かなかった場合(タップ)を検知したい
+            // 簡易的に「指が1本のときのタッチ開始」でブロック判定を行う
+            if (e.touches.length === 1) {
+                performBlockAction();
+            }
+        });
+
+        function performBlockAction() {
+            raycaster.setFromCamera(center, camera);
+            const intersects = raycaster.intersectObjects(objects);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+
+                if (isBuildMode) {
+                    // ブロックを置く
+                    const voxel = new THREE.Mesh(geometry, materials[currentColorIndex]);
+                    voxel.position.copy(intersect.point).add(intersect.face.normal);
+                    voxel.position.divideScalar(blockSize).floor().multiplyScalar(blockSize).addScalar(blockSize / 2);
+                    scene.add(voxel);
+                    objects.push(voxel);
+                } else {
+                    // ブロックを壊す
+                    if (intersect.object !== undefined) {
+                        scene.remove(intersect.object);
+                        objects.splice(objects.indexOf(intersect.object), 1);
+                    }
+                }
+            }
+        }
+
+
+        // --- メインループ ---
+        const clock = new THREE.Clock();
+        const speed = 5;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            // 移動計算
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0;
+            direction.normalize();
+
+            const right = new THREE.Vector3();
+            right.crossVectors(camera.up, direction).normalize(); // 左方向ベクトル（修正：camera.upとdirectionの外積）
+            // crossVectorsの順序によって左右が変わるため調整
+
+            if (moveForward) camera.position.addScaledVector(direction, speed * delta);
+            if (moveBackward) camera.position.addScaledVector(direction, -speed * delta);
+            
+            // 左右移動の修正
+            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            cameraRight.y = 0;
+            cameraRight.normalize();
+
+            if (moveRight) camera.position.addScaledVector(cameraRight, speed * delta);
+            if (moveLeft) camera.position.addScaledVector(cameraRight, -speed * delta);
+
+            if (moveUp) camera.position.y += speed * delta;
+            if (moveDown) camera.position.y -= speed * delta;
+
+            renderer.render(scene, camera);
+        }
+
+        // リサイズ対応
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
