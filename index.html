@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft - No Bounce Edition</title>
+    <title>Web Minecraft - Physics Fixed</title>
     <style>
         body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
@@ -44,7 +44,7 @@
     window.onload = function() {
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.Fog(0x87CEEB, 15, 50);
+        scene.fog = new THREE.Fog(0x87CEEB, 15, 60);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -52,7 +52,7 @@
         document.body.appendChild(renderer.domElement);
 
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        camera.position.set(0, 5, 5);
+        camera.position.set(0, 10, 0);
 
         const worldData = new Map();
         const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -71,36 +71,40 @@
             worldData.set(key, mesh);
         }
 
-        // 地面生成
-        for (let x = -15; x < 15; x++) {
-            for (let z = -15; z < 15; z++) {
+        for (let x = -20; x < 20; x++) {
+            for (let z = -20; z < 20; z++) {
                 addBlock(x, -1, z, (Math.abs(x+z)%2));
             }
         }
 
         const player = { 
-            radius: 0.35, 
-            eyeHeight: 1.6,
+            radius: 0.3, 
+            eyeHeight: 1.6, 
             vel: new THREE.Vector3(), 
             onGround: false, 
             fly: false, 
-            speed: 5.5 
+            speed: 5.5,
+            gravity: 24.0
         };
         let moveState = { x: 0, y: 0 };
         let matIdx = 0;
 
-        // --- 改良版：当たり判定 ---
+        // 判定用：指定座標にブロックがあるか
+        function isBlockAt(x, y, z) {
+            return worldData.has(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
+        }
+
+        // 全方向当たり判定
         function checkCollision(pos) {
             const r = player.radius;
-            const h = player.eyeHeight;
-            // プレイヤーを囲うボックス範囲をチェック
-            const points = [
-                {x: pos.x-r, y: pos.y-h+0.05, z: pos.z-r}, {x: pos.x+r, y: pos.y-h+0.05, z: pos.z-r},
-                {x: pos.x-r, y: pos.y-h+0.05, z: pos.z+r}, {x: pos.x+r, y: pos.y-h+0.05, z: pos.z+r},
-                {x: pos.x, y: pos.y-0.1, z: pos.z}, {x: pos.x, y: pos.y+0.2, z: pos.z}
-            ];
-            for (let p of points) {
-                if (worldData.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)) return true;
+            // 足元(少し上からチェック)、腰、頭の3層で判定
+            const levels = [pos.y - player.eyeHeight + 0.2, pos.y - 0.5, pos.y + 0.2];
+            for (let ly of levels) {
+                if (isBlockAt(pos.x - r, ly, pos.z - r)) return true;
+                if (isBlockAt(pos.x + r, ly, pos.z - r)) return true;
+                if (isBlockAt(pos.x - r, ly, pos.z + r)) return true;
+                if (isBlockAt(pos.x + r, ly, pos.z + r)) return true;
+                if (isBlockAt(pos.x, ly, pos.z)) return true;
             }
             return false;
         }
@@ -139,9 +143,9 @@
         document.getElementById('btn-build').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(true); });
         document.getElementById('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(false); });
         document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
-            e.preventDefault(); if (player.fly) player.vel.y = player.speed; else if (player.onGround) player.vel.y = 10;
+            e.preventDefault(); if (player.fly) player.vel.y = 8; else if (player.onGround) { player.vel.y = 9; player.onGround = false; }
         });
-        document.getElementById('btn-fly-down').addEventListener('touchstart', (e) => { e.preventDefault(); if(player.fly) player.vel.y = -player.speed; });
+        document.getElementById('btn-fly-down').addEventListener('touchstart', (e) => { e.preventDefault(); if(player.fly) player.vel.y = -8; });
 
         document.getElementById('mode-physics-btn').onclick = function() {
             player.fly = !player.fly;
@@ -176,36 +180,42 @@
             const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
             
             if (player.fly) {
-                camera.position.addScaledVector(fw, -moveState.y * player.speed * dt);
-                camera.position.addScaledVector(rt, moveState.x * player.speed * dt);
+                camera.position.addScaledVector(fw, -moveState.y * 10 * dt);
+                camera.position.addScaledVector(rt, moveState.x * 10 * dt);
                 camera.position.y += player.vel.y * dt;
-                player.vel.y *= 0.9;
+                player.vel.y *= 0.85;
             } else {
-                // XZ移動
-                let nx = camera.position.x + (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
-                let nz = camera.position.z + (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
-                if (!checkCollision({x: nx, y: camera.position.y, z: camera.position.z})) camera.position.x = nx;
-                if (!checkCollision({x: camera.position.x, y: camera.position.y, z: nz})) camera.position.z = nz;
+                // 水平移動
+                let nextX = camera.position.x + (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
+                let nextZ = camera.position.z + (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
+                
+                if (!checkCollision({x: nextX, y: camera.position.y, z: camera.position.z})) camera.position.x = nextX;
+                if (!checkCollision({x: camera.position.x, y: camera.position.y, z: nextZ})) camera.position.z = nextZ;
 
-                // Y移動 & バウンド防止ロジック
-                player.vel.y -= 28 * dt;
+                // 垂直移動（重力）
+                player.vel.y -= player.gravity * dt;
                 let nextY = camera.position.y + player.vel.y * dt;
-                
-                // 接地判定用の少し低い位置をチェック
-                let groundCheckY = nextY - player.eyeHeight;
-                let isHit = checkCollision({x: camera.position.x, y: nextY, z: camera.position.z});
-                
-                if (isHit) {
-                    if (player.vel.y < 0) {
+
+                // 接地・衝突判定のコア
+                if (player.vel.y < 0) { // 落下中
+                    // 足元よりわずかに下をチェック
+                    const footY = nextY - player.eyeHeight;
+                    if (isBlockAt(camera.position.x, footY, camera.position.z)) {
                         player.onGround = true;
-                        // 地面にピッタリ吸い付かせる (スナップ)
-                        camera.position.y = Math.floor(nextY - player.eyeHeight + 0.1) + player.eyeHeight + 1.0;
+                        player.vel.y = 0;
+                        // 座標を地面の高さに完全に固定（これがバウンドを防ぐ）
+                        camera.position.y = Math.floor(footY) + 1.0 + player.eyeHeight;
+                    } else {
+                        camera.position.y = nextY;
+                        player.onGround = false;
                     }
-                    player.vel.y = 0;
-                } else {
-                    camera.position.y = nextY;
-                    // 微小な振動を無視して接地判定を維持する
-                    if (Math.abs(player.vel.y) > 0.5) player.onGround = false;
+                } else if (player.vel.y > 0) { // 上昇中（ジャンプ）
+                    if (isBlockAt(camera.position.x, nextY + 0.3, camera.position.z)) {
+                        player.vel.y = 0; // 頭をぶつけた
+                    } else {
+                        camera.position.y = nextY;
+                        player.onGround = false;
+                    }
                 }
             }
             renderer.render(scene, camera);
