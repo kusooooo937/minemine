@@ -2,46 +2,47 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft - iPad Optimized UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Web Minecraft - iPad UI Final</title>
     <style>
         body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
-        /* ▼▼▼ UI位置調整箇所 ▼▼▼ */
-        /* bottomの値を大きくして、より上側に配置しました */
+        /* --- UIの配置を大幅に調整 --- */
         
-        /* ジョイスティック (左下) */
         #joystick-container {
             position: absolute;
-            bottom: 100px; /* 40px -> 100px に変更 */
-            left: 60px;    /* 40px -> 60px に少し内側へ */
-            width: 120px; height: 120px;
+            bottom: calc(env(safe-area-inset-bottom) + 160px); /* 下から160px + セーフエリア */
+            left: 80px;
+            width: 140px; height: 140px; /* 操作しやすいよう少し拡大 */
             background: rgba(255, 255, 255, 0.2);
             border-radius: 50%; pointer-events: auto;
-            border: 2px solid rgba(255, 255, 255, 0.5);
+            border: 3px solid rgba(255, 255, 255, 0.5);
         }
         
-        /* アクションボタン (右下) */
         #action-grid {
             position: absolute;
-            bottom: 100px; /* 40px -> 100px に変更 */
-            right: 60px;   /* 40px -> 60px に少し内側へ */
-            display: grid; grid-template-areas: "up up" "left right" "down down"; gap: 15px; pointer-events: auto;
+            bottom: calc(env(safe-area-inset-bottom) + 160px);
+            right: 80px;
+            display: grid; 
+            grid-template-areas: "up up" "left right" "down down"; 
+            gap: 20px; 
+            pointer-events: auto;
         }
-        /* ▲▲▲ UI位置調整箇所ここまで ▲▲▲ */
 
-        #joystick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; pointer-events: none; }
-        .act-btn { width: 75px; height: 75px; border-radius: 50%; background: rgba(0, 0, 0, 0.4); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #fff; pointer-events: auto; }
+        #joystick-knob { position: absolute; top: 45px; left: 45px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; pointer-events: none; }
+        .act-btn { width: 90px; height: 90px; border-radius: 50%; background: rgba(0, 0, 0, 0.4); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #fff; pointer-events: auto; font-size: 18px; }
         .act-btn:active { background: rgba(255, 255, 255, 0.6); transform: scale(0.9); }
+        
         #btn-build { background: rgba(0, 150, 0, 0.6); grid-area: left; }
         #btn-break { background: rgba(150, 0, 0, 0.6); grid-area: right; }
         #btn-jump { background: rgba(200, 150, 0, 0.6); grid-area: up; }
         #btn-fly-down { background: rgba(50, 50, 50, 0.6); grid-area: down; }
-        #top-bar { position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: auto; }
-        .toggle-btn { padding: 10px 15px; background: rgba(0,0,0,0.6); color: white; border-radius: 20px; border: none; font-size: 16px; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+        
+        #top-bar { position: absolute; top: calc(env(safe-area-inset-top) + 20px); width: 100%; display: flex; justify-content: center; gap: 15px; pointer-events: auto; }
+        .toggle-btn { padding: 12px 20px; background: rgba(0,0,0,0.6); color: white; border-radius: 25px; border: none; font-size: 18px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
     </style>
 </head>
 <body>
@@ -63,6 +64,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
+    // ※ 物理演算部分は前回の「バウンド修正済み」のロジックをそのまま使用しています
     window.onload = function() {
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -97,36 +99,18 @@
             for (let z = -15; z < 15; z++) addBlock(x, -1, z, (Math.abs(x+z)%2));
         }
 
-        const player = { 
-            radius: 0.3, 
-            eyeHeight: 1.6, 
-            vel: new THREE.Vector3(), 
-            onGround: false, 
-            fly: false, 
-            speed: 5.0,
-            gravity: 24.0
-        };
+        const player = { radius: 0.3, eyeHeight: 1.6, vel: new THREE.Vector3(), onGround: false, fly: false, speed: 5.0, gravity: 24.0 };
         let moveState = { x: 0, y: 0 };
         let matIdx = 0;
 
-        // 判定関数
         function isColliding(x, y, z) {
             const r = player.radius;
             const h = player.eyeHeight;
-            const testPoints = [
-                {x: x-r, y: y-h+0.1, z: z-r}, {x: x+r, y: y-h+0.1, z: z-r},
-                {x: x-r, y: y-h+0.1, z: z+r}, {x: x+r, y: y-h+0.1, z: z+r},
-                {x: x, y: y-h+0.1, z: z},
-                {x: x, y: y-0.5, z: z},
-                {x: x, y: y+0.1, z: z}
-            ];
-            for (let p of testPoints) {
-                if (worldData.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)) return true;
-            }
+            const testPoints = [{x:x-r,y:y-h+0.1,z:z-r},{x:x+r,y:y-h+0.1,z:z-r},{x:x-r,y:y-h+0.1,z:z+r},{x:x+r,y:y-h+0.1,z:z+r},{x:x,y:y-h+0.1,z:z},{x:x,y:y-0.5,z:z},{x:x,y:y+0.1,z:z}];
+            for (let p of testPoints) { if (worldData.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)) return true; }
             return false;
         }
 
-        // ジョイスティック
         const jContainer = document.getElementById('joystick-container');
         const jKnob = document.getElementById('joystick-knob');
         let jActive = false;
@@ -135,10 +119,10 @@
             const touch = e.touches ? e.touches[0] : e;
             const rect = jContainer.getBoundingClientRect();
             const dx = touch.clientX - (rect.left + rect.width/2), dy = touch.clientY - (rect.top + rect.height/2);
-            const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+            const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 50);
             const ang = Math.atan2(dy, dx);
             jKnob.style.transform = `translate(${Math.cos(ang)*dist}px, ${Math.sin(ang)*dist}px)`;
-            moveState.x = (Math.cos(ang)*dist)/40; moveState.y = (Math.sin(ang)*dist)/40;
+            moveState.x = (Math.cos(ang)*dist)/50; moveState.y = (Math.sin(ang)*dist)/50;
         }
         jContainer.addEventListener('touchstart', (e) => { jActive = true; handleJoystick(e); });
         window.addEventListener('touchmove', (e) => { if(jActive) { e.preventDefault(); handleJoystick(e); } }, { passive: false });
@@ -158,8 +142,7 @@
         document.getElementById('btn-build').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(true); });
         document.getElementById('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(false); });
         document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
-            e.preventDefault(); if(player.fly) player.vel.y = 8; 
-            else if(player.onGround) { player.vel.y = 9.0; player.onGround = false; }
+            e.preventDefault(); if(player.fly) player.vel.y = 8; else if(player.onGround) { player.vel.y = 9.0; player.onGround = false; }
         });
         document.getElementById('btn-fly-down').addEventListener('touchstart', (e) => { e.preventDefault(); if(player.fly) player.vel.y = -8; });
 
@@ -185,7 +168,6 @@
         });
 
         const clock = new THREE.Clock();
-
         function loop() {
             requestAnimationFrame(loop);
             const dt = Math.min(clock.getDelta(), 0.1);
@@ -199,40 +181,25 @@
             } else {
                 const moveX = (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
                 const moveZ = (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
-                
-                if (!isColliding(camera.position.x + moveX, camera.position.y, camera.position.z)) {
-                    camera.position.x += moveX;
-                }
-                if (!isColliding(camera.position.x, camera.position.y, camera.position.z + moveZ)) {
-                    camera.position.z += moveZ;
-                }
+                if (!isColliding(camera.position.x + moveX, camera.position.y, camera.position.z)) camera.position.x += moveX;
+                if (!isColliding(camera.position.x, camera.position.y, camera.position.z + moveZ)) camera.position.z += moveZ;
 
                 const footY = camera.position.y - player.eyeHeight;
                 const isOverBlock = worldData.has(`${Math.floor(camera.position.x)},${Math.floor(footY - 0.01)},${Math.floor(camera.position.z)}`);
-
                 if (isOverBlock && player.vel.y <= 0) {
-                    player.onGround = true;
-                    player.vel.y = 0;
+                    player.onGround = true; player.vel.y = 0;
                     const targetY = Math.floor(footY - 0.01) + 1.0 + player.eyeHeight + 0.001;
-                    if (Math.abs(camera.position.y - targetY) > 0.001) {
-                        camera.position.y = targetY;
-                    }
+                    if (Math.abs(camera.position.y - targetY) > 0.001) camera.position.y = targetY;
                 } else {
-                    player.onGround = false;
-                    player.vel.y -= player.gravity * dt;
+                    player.onGround = false; player.vel.y -= player.gravity * dt;
                     const nextY = camera.position.y + player.vel.y * dt;
-
                     if (player.vel.y < 0 && isColliding(camera.position.x, nextY, camera.position.z)) {
-                        player.onGround = true;
-                        player.vel.y = 0;
+                        player.onGround = true; player.vel.y = 0;
                         camera.position.y = Math.floor(nextY - player.eyeHeight) + 1.0 + player.eyeHeight + 0.001;
                     } else if (player.vel.y > 0 && isColliding(camera.position.x, nextY + 0.2, camera.position.z)) {
                         player.vel.y = 0;
-                    } else {
-                        camera.position.y = nextY;
-                    }
+                    } else { camera.position.y = nextY; }
                 }
-
                 if(camera.position.y < -20) camera.position.set(0, 5, 0);
             }
             renderer.render(scene, camera);
