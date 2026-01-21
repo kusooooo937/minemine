@@ -165,57 +165,79 @@
         });
 
         const clock = new THREE.Clock();
-        function loop() {
-            requestAnimationFrame(loop);
-            const dt = Math.min(clock.getDelta(), 0.05);
-            const fw = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); fw.y = 0; fw.normalize();
-            const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
-            
-            if (player.fly) {
-                camera.position.addScaledVector(fw, -moveState.y * 10 * dt);
-                camera.position.addScaledVector(rt, moveState.x * 10 * dt);
-                camera.position.y += player.vel.y * dt; player.vel.y *= 0.8;
-            } else {
-                // --- 物理演算の分離 ---
-                
-                // 1. まず横方向(X, Z)だけ動かす
-                const nextX = camera.position.x + (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
-                const nextZ = camera.position.z + (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
-                
-                if (!isColliding(nextX, camera.position.y, camera.position.z)) camera.position.x = nextX;
-                if (!isColliding(camera.position.x, camera.position.y, nextZ)) camera.position.z = nextZ;
+        // --- loop関数内の物理更新部分を以下に差し替えてみてください ---
 
-                // 2. 次に縦方向(Y)を動かす
-                player.vel.y -= player.gravity * dt;
-                const moveY = player.vel.y * dt;
-                const targetY = camera.position.y + moveY;
+function loop() {
+    requestAnimationFrame(loop);
+    // デルタタイムを安定させる（最大0.05秒に制限）
+    const dt = Math.min(clock.getDelta(), 0.05);
+    
+    const fw = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); fw.y = 0; fw.normalize();
+    const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
+    
+    if (player.fly) {
+        camera.position.addScaledVector(fw, -moveState.y * 10 * dt);
+        camera.position.addScaledVector(rt, moveState.x * 10 * dt);
+        camera.position.y += player.vel.y * dt;
+        player.vel.y *= 0.85; // 減衰
+    } else {
+        // 1. 水平移動 (X, Z)
+        const moveX = (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
+        const moveZ = (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
 
-                // 地面判定 (足元より少し下をチェック)
-                const footY = targetY - player.eyeHeight;
-                const floorX = Math.floor(camera.position.x), floorZ = Math.floor(camera.position.z);
-                
-                // 接地チェック用の当たり判定
-                if (worldData.has(`${floorX},${Math.floor(footY + 0.05)},${floorZ}`)) {
-                    if (player.vel.y < 0) {
-                        player.onGround = true;
-                        player.vel.y = 0;
-                        // 地面に吸着させる
-                        camera.position.y = Math.floor(footY + 0.05) + 1.0 + player.eyeHeight;
-                    }
-                } else {
-                    camera.position.y = targetY;
-                    player.onGround = false;
-                }
-
-                // 頭打ち判定
-                if (player.vel.y > 0 && worldData.has(`${floorX},${Math.floor(targetY + 0.2)},${floorZ}`)) {
-                    player.vel.y = 0;
-                }
-
-                if(camera.position.y < -20) camera.position.set(0, 5, 0);
-            }
-            renderer.render(scene, camera);
+        camera.position.x += moveX;
+        if (isColliding(camera.position.x, camera.position.y, camera.position.z)) {
+            camera.position.x -= moveX;
         }
+
+        camera.position.z += moveZ;
+        if (isColliding(camera.position.x, camera.position.y, camera.position.z)) {
+            camera.position.z -= moveZ;
+        }
+
+        // 2. 垂直移動 (Y)
+        // 接地判定用の足元チェック (現在の位置から少し下)
+        const checkDist = 0.1; 
+        const footPos = camera.position.y - player.eyeHeight;
+        const isCurrentlyOverBlock = worldData.has(
+            `${Math.floor(camera.position.x)},${Math.floor(footPos - 0.01)},${Math.floor(camera.position.z)}`
+        );
+
+        if (isCurrentlyOverBlock && player.vel.y <= 0) {
+            // 地面にいる場合：重力を無視し、位置を固定
+            player.onGround = true;
+            player.vel.y = 0;
+            // 地面の高さへスナップ（+0.001の余裕を持たせてバウンドを抑止）
+            const targetY = Math.floor(footPos) + 1.0 + player.eyeHeight + 0.001;
+            // 差が小さい場合のみ補正（急激なワープを防ぐ）
+            if (Math.abs(camera.position.y - targetY) < 0.2) {
+                camera.position.y = targetY;
+            }
+        } else {
+            // 空中にいる場合：重力を適用
+            player.onGround = false;
+            player.vel.y -= player.gravity * dt;
+            const moveY = player.vel.y * dt;
+            
+            camera.position.y += moveY;
+            
+            // 下方向の衝突
+            if (player.vel.y < 0 && isColliding(camera.position.x, camera.position.y, camera.position.z)) {
+                player.onGround = true;
+                player.vel.y = 0;
+                camera.position.y = Math.floor(camera.position.y - player.eyeHeight) + 1.0 + player.eyeHeight + 0.001;
+            }
+            // 上方向（頭上）の衝突
+            if (player.vel.y > 0 && isColliding(camera.position.x, camera.position.y + 0.2, camera.position.z)) {
+                player.vel.y = 0;
+            }
+        }
+        
+        // 落下しすぎた場合の復帰
+        if (camera.position.y < -30) camera.position.set(0, 10, 0);
+    }
+    renderer.render(scene, camera);
+}
         loop();
     };
     </script>
