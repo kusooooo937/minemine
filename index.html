@@ -3,83 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft Mobile V2 (Physics)</title>
+    <title>Web Minecraft Mobile - Final Stable</title>
     <style>
-        body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
         
-        /* UIレイヤー */
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            display: flex; flex-direction: column; justify-content: space-between;
-        }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 
-        /* ボタン共通 */
         .btn {
-            background: rgba(255, 255, 255, 0.4);
-            border: 2px solid rgba(255, 255, 255, 0.8);
-            border-radius: 10px;
-            pointer-events: auto; touch-action: none;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; color: #333; backdrop-filter: blur(4px);
-        }
-        .btn:active { background: rgba(255, 255, 255, 0.7); transform: scale(0.95); }
-
-        /* 左側：移動パッド */
-        #d-pad {
-            position: absolute; bottom: 40px; left: 40px;
-            width: 140px; height: 140px;
-        }
-        #btn-fwd { position: absolute; top: 0; left: 45px; width: 50px; height: 50px; }
-        #btn-back { position: absolute; bottom: 0; left: 45px; width: 50px; height: 50px; }
-        #btn-left { position: absolute; top: 45px; left: 0; width: 50px; height: 50px; }
-        #btn-right { position: absolute; top: 45px; right: 0; width: 50px; height: 50px; }
-
-        /* 右側：アクションボタン */
-        #actions {
-            position: absolute; bottom: 40px; right: 40px;
-            display: flex; flex-direction: column; gap: 15px; align-items: flex-end;
-        }
-        .round-btn { width: 70px; height: 70px; border-radius: 50%; font-size: 14px; }
-        #btn-jump { background: rgba(255, 200, 200, 0.6); } /* ジャンプは少し目立たせる */
-
-        /* 上部：情報・設定 */
-        #top-bar {
-            padding: 10px; display: flex; gap: 10px; pointer-events: auto;
-            justify-content: center;
-        }
-        .toggle-btn {
-            padding: 8px 16px; font-size: 12px; border-radius: 20px;
-            background: rgba(0,0,0,0.5); color: white; border: none;
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid #fff; border-radius: 10px;
+            pointer-events: auto; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 20px;
         }
 
-        #crosshair {
-            position: absolute; top: 50%; left: 50%;
-            width: 12px; height: 12px;
-            border: 2px solid rgba(255,255,255,0.8); border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-        }
+        #d-pad { position: absolute; bottom: 30px; left: 30px; width: 150px; height: 150px; }
+        #btn-fwd { position: absolute; top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-back { position: absolute; bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-left { position: absolute; top: 50px; left: 0; width: 50px; height: 50px; }
+        #btn-right { position: absolute; top: 50px; right: 0; width: 50px; height: 50px; }
+
+        #actions { position: absolute; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 10px; }
+        .round-btn { width: 70px; height: 70px; border-radius: 50%; }
+        
+        #top-bar { position: absolute; top: 10px; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: auto; }
+        .toggle-btn { padding: 10px 15px; background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 20px; font-size: 14px; }
+
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
     </style>
 </head>
 <body>
 
     <div id="crosshair"></div>
-    
     <div id="ui-layer">
         <div id="top-bar">
-            <div class="toggle-btn" id="mode-physics" onclick="togglePhysics()">サバイバル (重力ON)</div>
-            <div class="toggle-btn" id="mode-block" onclick="toggleBlockMode()">ブロック: 置く (緑)</div>
+            <button class="toggle-btn" id="mode-physics-btn">サバイバル</button>
+            <button class="toggle-btn" id="mode-block-btn">置く (緑)</button>
         </div>
-
         <div id="d-pad">
             <div class="btn" id="btn-fwd">▲</div>
             <div class="btn" id="btn-left">◀</div>
             <div class="btn" id="btn-right">▶</div>
             <div class="btn" id="btn-back">▼</div>
         </div>
-
         <div id="actions">
             <div class="btn round-btn" id="btn-fly-up" style="display:none;">上昇</div>
             <div class="btn round-btn" id="btn-fly-down" style="display:none;">下降</div>
@@ -90,356 +56,167 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 初期設定 ---
+    window.onload = function() {
+        // --- 基本設定 ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.Fog(0x87CEEB, 10, 60);
+        scene.fog = new THREE.Fog(0x87CEEB, 10, 50);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // --- ライト ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        dirLight.position.set(20, 50, 20);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        dirLight.position.set(5, 10, 5);
         scene.add(dirLight);
 
-        // --- ブロック管理 (Mapを使って高速化) ---
-        const blockSize = 1;
-        const worldData = new Map(); // "x,y,z" => Mesh
-        const geometry = new THREE.BoxGeometry(blockSize, blockSize, blockSize);
-        
+        // --- ワールド生成 ---
+        const worldData = new Map();
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
         const materials = [
-            new THREE.MeshLambertMaterial({ color: 0x4CAF50 }), // 0: 緑
-            new THREE.MeshLambertMaterial({ color: 0x795548 }), // 1: 茶
-            new THREE.MeshLambertMaterial({ color: 0x808080 }), // 2: 石
-            new THREE.MeshLambertMaterial({ color: 0xFFD700 }), // 3: 金(目印)
+            new THREE.MeshLambertMaterial({ color: 0x4CAF50 }), // 緑
+            new THREE.MeshLambertMaterial({ color: 0x795548 }), // 茶
+            new THREE.MeshLambertMaterial({ color: 0x808080 })  // 灰
         ];
 
-        function addBlock(x, y, z, matIndex) {
+        function addBlock(x, y, z, mIdx) {
             const key = `${x},${y},${z}`;
-            if (worldData.has(key)) return; // 既にあったら置かない
-
-            const mat = materials[matIndex];
-            const mesh = new THREE.Mesh(geometry, mat);
-            mesh.position.set(x + 0.5, y + 0.5, z + 0.5); // グリッドの中心に合わせる
+            if (worldData.has(key)) return;
+            const mesh = new THREE.Mesh(geometry, materials[mIdx % 3]);
+            mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
             scene.add(mesh);
             worldData.set(key, mesh);
         }
 
-        function removeBlock(x, y, z) {
-            const key = `${x},${y},${z}`;
-            if (worldData.has(key)) {
-                const mesh = worldData.get(key);
-                scene.remove(mesh);
-                mesh.geometry.dispose(); // メモリ解放
-                worldData.delete(key);
-            }
-        }
-
-        // --- 地形生成 (床) ---
+        // 初期地面作成
         for (let x = -10; x < 10; x++) {
             for (let z = -10; z < 10; z++) {
-                addBlock(x, -1, z, (x+z)%2==0 ? 0 : 1);
-                // 壁を作ってみる
-                if (x === -10 || x === 9 || z === -10 || z === 9) {
-                    addBlock(x, 0, z, 2);
-                    addBlock(x, 1, z, 2);
-                }
+                addBlock(x, -1, z, (Math.abs(x+z)%2));
             }
         }
-        
-        // プレイヤーの初期位置
-        camera.position.set(0, 5, 0);
+        camera.position.set(0, 3, 5);
 
-        // --- 物理演算用変数 ---
-        const player = {
-            width: 0.6, // プレイヤーの幅
-            height: 1.8, // プレイヤーの高さ
-            velocity: new THREE.Vector3(),
-            onGround: false,
-            speed: 5.0,
-            jumpForce: 10.0,
-            gravity: 25.0,
-            flyMode: false // false = Survival, true = Creative
-        };
+        // --- 物理と入力 ---
+        const player = { vel: new THREE.Vector3(), onGround: false, fly: false, speed: 6, jump: 10, gravity: 25 };
+        const input = { fwd: false, back: false, left: false, right: false, jump: false, up: false, down: false };
 
-        // --- コントローラー入力状態 ---
-        const input = { fwd: false, back: false, left: false, right: false, jump: false, flyUp: false, flyDown: false };
-
-        const setupBtn = (id, key) => {
+        const bind = (id, key) => {
             const el = document.getElementById(id);
-            if(!el) return;
-            const start = (e) => { e.preventDefault(); input[key] = true; };
-            const end = (e) => { e.preventDefault(); input[key] = false; };
-            el.addEventListener('touchstart', start, {passive:false});
-            el.addEventListener('touchend', end);
-            el.addEventListener('mousedown', () => input[key] = true);
-            el.addEventListener('mouseup', () => input[key] = false);
-            el.addEventListener('mouseleave', () => input[key] = false);
+            if (!el) return;
+            const set = (v) => (e) => { e.preventDefault(); input[key] = v; };
+            el.addEventListener('touchstart', set(true));
+            el.addEventListener('touchend', set(false));
+            el.addEventListener('mousedown', set(true));
+            el.addEventListener('mouseup', set(false));
+        };
+        bind('btn-fwd', 'fwd'); bind('btn-back', 'back'); bind('btn-left', 'left'); bind('btn-right', 'right');
+        bind('btn-jump', 'jump'); bind('btn-fly-up', 'up'); bind('btn-fly-down', 'down');
+
+        // --- モード切替 ---
+        let buildMode = true, colorIdx = 0;
+        document.getElementById('mode-physics-btn').onclick = function() {
+            player.fly = !player.fly;
+            this.innerText = player.fly ? "クリエイティブ" : "サバイバル";
+            document.getElementById('btn-jump').style.display = player.fly ? 'none' : 'flex';
+            document.getElementById('btn-fly-up').style.display = player.fly ? 'flex' : 'none';
+            document.getElementById('btn-fly-down').style.display = player.fly ? 'flex' : 'none';
+        };
+        document.getElementById('mode-block-btn').onclick = function() {
+            buildMode = !buildMode;
+            if(buildMode) {
+                colorIdx = (colorIdx + 1) % 3;
+                const names = ["緑", "茶", "灰"];
+                this.innerText = "置く (" + names[colorIdx] + ")";
+            } else {
+                this.innerText = "壊す";
+            }
         };
 
-        setupBtn('btn-fwd', 'fwd');
-        setupBtn('btn-back', 'back');
-        setupBtn('btn-left', 'left');
-        setupBtn('btn-right', 'right');
-        setupBtn('btn-jump', 'jump');
-        setupBtn('btn-fly-up', 'flyUp');
-        setupBtn('btn-fly-down', 'flyDown');
-
-        // --- 視点移動 (タッチ操作) ---
-        let yaw = 0, pitch = 0;
-        let lastTouchX = 0, lastTouchY = 0, isDragging = false;
-
+        // --- 視点移動 ---
+        let yaw = 0, pitch = 0, dragging = false, lastX, lastY;
         document.addEventListener('touchstart', (e) => {
             if (e.target.closest('.btn') || e.target.closest('.toggle-btn')) return;
-            isDragging = true;
-            lastTouchX = e.touches[0].clientX;
-            lastTouchY = e.touches[0].clientY;
-            
-            // シングルタップ判定用
-            if(e.touches.length === 1) tryBlockAction();
-        }, {passive: false});
-
+            dragging = true;
+            lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+            if(e.touches.length === 1) handleAction();
+        });
         document.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            e.preventDefault();
-            const touch = e.touches[0];
-            const dx = touch.clientX - lastTouchX;
-            const dy = touch.clientY - lastTouchY;
-            
-            yaw -= dx * 0.005;
-            pitch -= dy * 0.005;
-            pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
-
+            if (!dragging) return;
+            const dx = e.touches[0].clientX - lastX;
+            const dy = e.touches[0].clientY - lastY;
+            yaw -= dx * 0.005; pitch -= dy * 0.005;
+            pitch = Math.max(-1.5, Math.min(1.5, pitch));
             camera.rotation.set(pitch, yaw, 0, 'YXZ');
-            
-            lastTouchX = touch.clientX;
-            lastTouchY = touch.clientY;
-        }, {passive: false});
+            lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+        });
+        document.addEventListener('touchend', () => dragging = false);
 
-        document.addEventListener('touchend', () => isDragging = false);
+        // --- 物理判定 ---
+        function check(pos) {
+            const x = Math.floor(pos.x), y = Math.floor(pos.y - 1.5), z = Math.floor(pos.z);
+            return worldData.has(`${x},${y},${z}`) || worldData.has(`${x},${Math.floor(pos.y-0.5)},${z}`);
+        }
 
-
-        // --- 物理エンジン (衝突判定) ---
-        function checkCollision(pos) {
-            // プレイヤーのBoundingBox (簡易版: 足元中心の周囲)
-            // チェックする範囲のブロック座標を計算
-            const minX = Math.floor(pos.x - player.width / 2);
-            const maxX = Math.floor(pos.x + player.width / 2);
-            const minY = Math.floor(pos.y - 1.5); // 足元付近
-            const maxY = Math.floor(pos.y + 0.5); // 頭付近
-            const minZ = Math.floor(pos.z - player.width / 2);
-            const maxZ = Math.floor(pos.z + player.width / 2);
-
-            for (let x = minX; x <= maxX; x++) {
-                for (let y = minY; y <= maxY; y++) {
-                    for (let z = minZ; z <= maxZ; z++) {
-                        if (worldData.has(`${x},${y},${z}`)) {
-                            return true; // ブロックがある
-                        }
+        function handleAction() {
+            const ray = new THREE.Raycaster();
+            ray.setFromCamera(new THREE.Vector2(), camera);
+            ray.far = 6;
+            const hits = ray.intersectObjects(Array.from(worldData.values()));
+            if (hits.length > 0) {
+                const h = hits[0], p = h.point, n = h.face.normal;
+                const bx = Math.floor(p.x - n.x*0.1), by = Math.floor(p.y - n.y*0.1), bz = Math.floor(p.z - n.z*0.1);
+                if (buildMode) {
+                    addBlock(bx + Math.round(n.x), by + Math.round(n.y), bz + Math.round(n.z), colorIdx);
+                } else {
+                    const key = `${bx},${by},${bz}`;
+                    if(worldData.has(key)) {
+                        scene.remove(worldData.get(key));
+                        worldData.delete(key);
                     }
                 }
             }
-            return false;
         }
 
         const clock = new THREE.Clock();
-
-        function updatePhysics(delta) {
-            // 抵抗
-            player.velocity.x -= player.velocity.x * 10.0 * delta;
-            player.velocity.z -= player.velocity.z * 10.0 * delta;
-
-            // --- 1. 移動入力の計算 (水平方向) ---
-            const direction = new THREE.Vector3();
-            // カメラの向きからY成分を除去して正規化
-            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            forward.y = 0; forward.normalize();
-            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            right.y = 0; right.normalize();
-
-            if (input.fwd) direction.add(forward);
-            if (input.back) direction.sub(forward);
-            if (input.right) direction.add(right);
-            if (input.left) direction.sub(right);
-
-            if (direction.length() > 0) direction.normalize();
-
-            // 速度に加算
-            const speed = player.flyMode ? player.speed * 2 : player.speed;
-            if (direction.length() > 0) {
-                player.velocity.x = direction.x * speed;
-                player.velocity.z = direction.z * speed;
+        function loop() {
+            requestAnimationFrame(loop);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            
+            const fw = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); fw.y = 0; fw.normalize();
+            const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
+            
+            const move = new THREE.Vector3();
+            if(input.fwd) move.add(fw); if(input.back) move.sub(fw);
+            if(input.right) move.add(rt); if(input.left) move.sub(rt);
+            
+            if(move.length() > 0) {
+                move.normalize();
+                camera.position.x += move.x * player.speed * dt;
+                camera.position.z += move.z * player.speed * dt;
             }
 
-            // --- 2. 垂直方向 (重力 / ジャンプ / 飛行) ---
-            if (player.flyMode) {
-                // クリエイティブモード
-                player.velocity.y = 0;
-                if (input.jump || input.flyUp) player.velocity.y = speed;
-                if (input.flyDown) player.velocity.y = -speed;
+            if (player.fly) {
+                if(input.up) camera.position.y += player.speed * dt;
+                if(input.down) camera.position.y -= player.speed * dt;
             } else {
-                // サバイバルモード（重力）
-                player.velocity.y -= player.gravity * delta;
-                if (input.jump && player.onGround) {
-                    player.velocity.y = player.jumpForce;
+                player.vel.y -= player.gravity * dt;
+                if(input.jump && player.onGround) { player.vel.y = player.jump; player.onGround = false; }
+                camera.position.y += player.vel.y * dt;
+                if(check(camera.position)) {
+                    if(player.vel.y < 0) {
+                        player.onGround = true;
+                        camera.position.y = Math.floor(camera.position.y - 1.5) + 2.5;
+                    }
+                    player.vel.y = 0;
+                } else {
                     player.onGround = false;
                 }
             }
-
-            // --- 3. 衝突判定と位置更新 (X, Y, Z それぞれ独立に行う) ---
-            
-            // X軸移動
-            let nextPos = camera.position.clone();
-            nextPos.x += player.velocity.x * delta;
-            if (!player.flyMode && checkCollision(nextPos)) {
-                player.velocity.x = 0; // 衝突したら止まる
-            } else {
-                camera.position.x = nextPos.x;
-            }
-
-            // Z軸移動
-            nextPos = camera.position.clone();
-            nextPos.z += player.velocity.z * delta;
-            if (!player.flyMode && checkCollision(nextPos)) {
-                player.velocity.z = 0;
-            } else {
-                camera.position.z = nextPos.z;
-            }
-
-            // Y軸移動
-            nextPos = camera.position.clone();
-            nextPos.y += player.velocity.y * delta;
-            
-            if (!player.flyMode && checkCollision(nextPos)) {
-                // 衝突した場合
-                if (player.velocity.y < 0) {
-                    player.onGround = true; // 下に落ちてぶつかった＝着地
-                    // グリッドにスナップさせる（埋まり防止の簡易補正）
-                    camera.position.y = Math.ceil(camera.position.y - 1.5) + 1.5; 
-                } else {
-                    // 頭をぶつけた
-                }
-                player.velocity.y = 0;
-            } else {
-                camera.position.y = nextPos.y;
-                if (!player.flyMode) player.onGround = false;
-            }
-
-            // 無限落下防止
-            if (camera.position.y < -30) {
-                camera.position.set(0, 10, 0);
-                player.velocity.set(0, 0, 0);
-            }
-        }
-
-        // --- ブロック設置・破壊 ---
-        let buildMode = true; // true: Place, false: Break
-        let matIndex = 0;
-        const raycaster = new THREE.Raycaster();
-        const center = new THREE.Vector2(0, 0);
-
-        function toggleBlockMode() {
-            buildMode = !buildMode;
-            const btn = document.getElementById('mode-block');
-            if(buildMode) {
-                matIndex = (matIndex + 1) % materials.length;
-                const colors = ["緑", "茶", "灰", "金"];
-                btn.innerText = `ブロック: 置く (${colors[matIndex]})`;
-                btn.style.background = "rgba(0,100,0,0.5)";
-            } else {
-                btn.innerText = "ブロック: 壊す";
-                btn.style.background = "rgba(100,0,0,0.5)";
-            }
-        }
-
-        function tryBlockAction() {
-            raycaster.setFromCamera(center, camera);
-            // 視線の先5ブロックまで判定
-            raycaster.far = 6;
-            
-            // Setの値（Mesh）を配列にして判定
-            const meshList = Array.from(worldData.values());
-            const intersects = raycaster.intersectObjects(meshList);
-
-            if (intersects.length > 0) {
-                const intersect = intersects[0];
-                const p = intersect.point;
-                const n = intersect.face.normal;
-
-                // 対象ブロックの座標を特定
-                // 座標計算の精度誤差対策で、少し内側の座標を取得してFloorする
-                const tx = Math.floor(p.x - n.x * 0.1);
-                const ty = Math.floor(p.y - n.y * 0.1);
-                const tz = Math.floor(p.z - n.z * 0.1);
-
-                if (buildMode) {
-                    // 設置座標
-                    const bx = tx + Math.round(n.x);
-                    const by = ty + Math.round(n.y);
-                    const bz = tz + Math.round(n.z);
-
-                    // プレイヤーがそこにいないか確認（簡易チェック）
-                    const px = Math.floor(camera.position.x);
-                    const py = Math.floor(camera.position.y - 1); // 足元
-                    const pz = Math.floor(camera.position.z);
-                    
-                    // プレイヤーの座標(足元or頭)と被ってなければ置ける
-                    if (!(bx === px && bz === pz && (by === py || by === py + 1))) {
-                        addBlock(bx, by, bz, matIndex);
-                    }
-                } else {
-                    // 破壊
-                    removeBlock(tx, ty, tz);
-                }
-            }
-        }
-
-        // --- ゲームモード切替 ---
-        function togglePhysics() {
-            player.flyMode = !player.flyMode;
-            const btn = document.getElementById('mode-physics');
-            const jumpBtn = document.getElementById('btn-jump');
-            const flyUp = document.getElementById('btn-fly-up');
-            const flyDown = document.getElementById('btn-fly-down');
-
-            if(player.flyMode) {
-                btn.innerText = "クリエイティブ (飛べる)";
-                btn.style.background = "rgba(0,0,200,0.5)";
-                player.velocity.y = 0;
-                // UI切り替え
-                jumpBtn.style.display = 'none';
-                flyUp.style.display = 'flex';
-                flyDown.style.display = 'flex';
-            } else {
-                btn.innerText = "サバイバル (重力ON)";
-                btn.style.background = "rgba(0,0,0,0.5)";
-                // UI切り替え
-                jumpBtn.style.display = 'flex';
-                flyUp.style.display = 'none';
-                flyDown.style.display = 'none';
-            }
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            const delta = Math.min(clock.getDelta(), 0.1); // 時間経過
-            updatePhysics(delta);
             renderer.render(scene, camera);
         }
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        animate();
-
+        loop();
+    };
     </script>
 </body>
-</html>
