@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Web Minecraft - No Interference Physics</title>
+    <title>Web Minecraft - No Bounce Final</title>
     <style>
         body { margin: 0; overflow: hidden; touch-action: none; background-color: #87CEEB; font-family: sans-serif; user-select: none; }
         canvas { display: block; }
@@ -71,7 +71,6 @@
             worldData.set(key, mesh);
         }
 
-        // 地面
         for (let x = -15; x < 15; x++) {
             for (let z = -15; z < 15; z++) addBlock(x, -1, z, (Math.abs(x+z)%2));
         }
@@ -83,22 +82,21 @@
             onGround: false, 
             fly: false, 
             speed: 5.0,
-            gravity: 22.0
+            gravity: 24.0
         };
         let moveState = { x: 0, y: 0 };
         let matIdx = 0;
 
-        // 判定関数：衝突しているか？
+        // 判定関数
         function isColliding(x, y, z) {
             const r = player.radius;
             const h = player.eyeHeight;
-            // プレイヤーの四隅と中心（高さ3段階）をチェック
             const testPoints = [
                 {x: x-r, y: y-h+0.1, z: z-r}, {x: x+r, y: y-h+0.1, z: z-r},
                 {x: x-r, y: y-h+0.1, z: z+r}, {x: x+r, y: y-h+0.1, z: z+r},
-                {x: x, y: y-h+0.1, z: z}, // 足元
-                {x: x, y: y-0.5, z: z},    // 腰
-                {x: x, y: y+0.1, z: z}     // 頭
+                {x: x, y: y-h+0.1, z: z},
+                {x: x, y: y-0.5, z: z},
+                {x: x, y: y+0.1, z: z}
             ];
             for (let p of testPoints) {
                 if (worldData.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)) return true;
@@ -106,7 +104,7 @@
             return false;
         }
 
-        // ジョイスティック
+        // ジョイスティック (省略せずそのまま維持)
         const jContainer = document.getElementById('joystick-container');
         const jKnob = document.getElementById('joystick-knob');
         let jActive = false;
@@ -124,7 +122,6 @@
         window.addEventListener('touchmove', (e) => { if(jActive) { e.preventDefault(); handleJoystick(e); } }, { passive: false });
         window.addEventListener('touchend', () => { jActive = false; jKnob.style.transform = 'translate(0,0)'; moveState = {x:0, y:0}; });
 
-        // アクション
         const ray = new THREE.Raycaster();
         function performAction(isBuild) {
             ray.setFromCamera(new THREE.Vector2(), camera); ray.far = 6;
@@ -139,7 +136,8 @@
         document.getElementById('btn-build').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(true); });
         document.getElementById('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); performAction(false); });
         document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
-            e.preventDefault(); if(player.fly) player.vel.y = 8; else if(player.onGround) { player.vel.y = 8.5; player.onGround = false; }
+            e.preventDefault(); if(player.fly) player.vel.y = 8; 
+            else if(player.onGround) { player.vel.y = 9.0; player.onGround = false; }
         });
         document.getElementById('btn-fly-down').addEventListener('touchstart', (e) => { e.preventDefault(); if(player.fly) player.vel.y = -8; });
 
@@ -165,9 +163,10 @@
         });
 
         const clock = new THREE.Clock();
+
         function loop() {
             requestAnimationFrame(loop);
-            const dt = Math.min(clock.getDelta(), 0.05);
+            const dt = Math.min(clock.getDelta(), 0.1);
             const fw = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); fw.y = 0; fw.normalize();
             const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rt.y = 0; rt.normalize();
             
@@ -176,40 +175,50 @@
                 camera.position.addScaledVector(rt, moveState.x * 10 * dt);
                 camera.position.y += player.vel.y * dt; player.vel.y *= 0.8;
             } else {
-                // --- 物理演算の分離 ---
+                // 1. 水平移動の先行処理
+                const moveX = (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
+                const moveZ = (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
                 
-                // 1. まず横方向(X, Z)だけ動かす
-                const nextX = camera.position.x + (fw.x * -moveState.y + rt.x * moveState.x) * player.speed * dt;
-                const nextZ = camera.position.z + (fw.z * -moveState.y + rt.z * moveState.x) * player.speed * dt;
-                
-                if (!isColliding(nextX, camera.position.y, camera.position.z)) camera.position.x = nextX;
-                if (!isColliding(camera.position.x, camera.position.y, nextZ)) camera.position.z = nextZ;
-
-                // 2. 次に縦方向(Y)を動かす
-                player.vel.y -= player.gravity * dt;
-                const moveY = player.vel.y * dt;
-                const targetY = camera.position.y + moveY;
-
-                // 地面判定 (足元より少し下をチェック)
-                const footY = targetY - player.eyeHeight;
-                const floorX = Math.floor(camera.position.x), floorZ = Math.floor(camera.position.z);
-                
-                // 接地チェック用の当たり判定
-                if (worldData.has(`${floorX},${Math.floor(footY + 0.05)},${floorZ}`)) {
-                    if (player.vel.y < 0) {
-                        player.onGround = true;
-                        player.vel.y = 0;
-                        // 地面に吸着させる
-                        camera.position.y = Math.floor(footY + 0.05) + 1.0 + player.eyeHeight;
-                    }
-                } else {
-                    camera.position.y = targetY;
-                    player.onGround = false;
+                if (!isColliding(camera.position.x + moveX, camera.position.y, camera.position.z)) {
+                    camera.position.x += moveX;
+                }
+                if (!isColliding(camera.position.x, camera.position.y, camera.position.z + moveZ)) {
+                    camera.position.z += moveZ;
                 }
 
-                // 頭打ち判定
-                if (player.vel.y > 0 && worldData.has(`${floorX},${Math.floor(targetY + 0.2)},${floorZ}`)) {
+                // 2. 垂直移動 (バウンド防止の核心)
+                // 接地判定用の足元の高さを取得
+                const footY = camera.position.y - player.eyeHeight;
+                // 「今まさにブロックの真上にいるか」を判定
+                const isOverBlock = worldData.has(`${Math.floor(camera.position.x)},${Math.floor(footY - 0.01)},${Math.floor(camera.position.z)}`);
+
+                if (isOverBlock && player.vel.y <= 0) {
+                    // 【接地状態】
+                    player.onGround = true;
                     player.vel.y = 0;
+                    // 地面の高さに強制スナップ（0.001の微小な浮きを持たせて判定のチャタリングを防ぐ）
+                    const targetY = Math.floor(footY - 0.01) + 1.0 + player.eyeHeight + 0.001;
+                    // 誤差が一定以上あるときだけ補正
+                    if (Math.abs(camera.position.y - targetY) > 0.001) {
+                        camera.position.y = targetY;
+                    }
+                } else {
+                    // 【空中状態】
+                    player.onGround = false;
+                    player.vel.y -= player.gravity * dt;
+                    const nextY = camera.position.y + player.vel.y * dt;
+
+                    // 下方向の衝突チェック
+                    if (player.vel.y < 0 && isColliding(camera.position.x, nextY, camera.position.z)) {
+                        player.onGround = true;
+                        player.vel.y = 0;
+                        camera.position.y = Math.floor(nextY - player.eyeHeight) + 1.0 + player.eyeHeight + 0.001;
+                    } else if (player.vel.y > 0 && isColliding(camera.position.x, nextY + 0.2, camera.position.z)) {
+                        // 上方向の衝突（頭打ち）
+                        player.vel.y = 0;
+                    } else {
+                        camera.position.y = nextY;
+                    }
                 }
 
                 if(camera.position.y < -20) camera.position.set(0, 5, 0);
